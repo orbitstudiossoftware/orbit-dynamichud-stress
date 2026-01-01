@@ -44,9 +44,14 @@ local function getBlurIntensity(stresslevel)
 end
 
 local function getEffectInterval(stresslevel)
-    for _, v in pairs(Config.Stress.effectInterval) do
-        if stresslevel >= v.min and stresslevel <= v.max then
-            return v.timeout
+    if type(stresslevel) ~= "number" then
+        return 60000
+    end
+    for _, v in pairs(Config.Stress.effectInterval or {}) do
+        if type(v.min) == "number" and type(v.max) == "number" then
+            if stresslevel >= v.min and stresslevel <= v.max then
+                return v.timeout or 60000
+            end
         end
     end
     return 60000
