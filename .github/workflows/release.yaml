@@ -1,4 +1,4 @@
-name: Publish & Notify
+name: Publish & Notify (Without CFX upload)
 
 on:
   push:
