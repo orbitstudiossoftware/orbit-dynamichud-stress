@@ -1,0 +1,212 @@
+name: Publish & Notify
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Optional commit SHA"
+        required: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout target commit
+        if: github.event.inputs.commit_sha != ''
+        run: git checkout ${{ github.event.inputs.commit_sha }}
+
+      - name: Extract version
+        id: get_version
+        run: |
+          VERSION=$(grep -oP "^version\s+['\"]\K[^'\"]+" fxmanifest.lua | tr -d '\r\n')
+          [ -z "$VERSION" ] && echo "No version found" && exit 1
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Get commit info
+        id: commit_info
+        run: |
+          {
+            echo "title<<EOF"
+            git log -1 --pretty=%s
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "body<<EOF"
+            git log -1 --pretty=%b
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create tag if not exists
+        run: |
+          if ! git rev-parse "${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag ${{ steps.get_version.outputs.version }}
+            git push origin ${{ steps.get_version.outputs.version }}
+          fi
+
+      - name: Create escrow ZIP
+        run: |
+          zip -r "${{ github.event.repository.name }}.zip" . \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x ".gitignore" \
+            -x ".gitattributes" \
+            -x ".vscode/*" \
+            -x "node_modules/*"
+
+      - name: Format release body
+        id: release_body
+        run: |
+          BODY_CONTENT="${{ steps.commit_info.outputs.body }}"
+
+          FEATURES=""
+          FIXES=""
+          CHORES=""
+          REFACTOR=""
+          DOCS=""
+          PERF=""
+          TESTS=""
+          NOTES=""
+
+          while IFS= read -r line; do
+            case "$line" in
+              feat:*) FEATURES+="- ${line#feat: }"$'\n' ;;
+              fix:*) FIXES+="- ${line#fix: }"$'\n' ;;
+              chore:*) CHORES+="- ${line#chore: }"$'\n' ;;
+              refactor:*) REFACTOR+="- ${line#refactor: }"$'\n' ;;
+              docs:*) DOCS+="- ${line#docs: }"$'\n' ;;
+              perf:*) PERF+="- ${line#perf: }"$'\n' ;;
+              test:*) TESTS+="- ${line#test: }"$'\n' ;;
+              note:*) NOTES+="- ${line#note: }"$'\n' ;;
+            esac
+          done <<< "$BODY_CONTENT"
+
+          RELEASE_BODY=""
+
+          [ -n "$FEATURES" ] && RELEASE_BODY+="### ✨ Features"$'\n'"$FEATURES"
+          [ -n "$FIXES" ] && RELEASE_BODY+="### 🛠 Bug Fixes"$'\n'"$FIXES"
+          [ -n "$REFACTOR" ] && RELEASE_BODY+="### ♻️ Refactoring"$'\n'"$REFACTOR"
+          [ -n "$CHORES" ] && RELEASE_BODY+="### 🔧 Maintenance"$'\n'"$CHORES"
+          [ -n "$DOCS" ] && RELEASE_BODY+="### 📝 Documentation"$'\n'"$DOCS"
+          [ -n "$PERF" ] && RELEASE_BODY+="### ⚡ Performance"$'\n'"$PERF"
+          [ -n "$TESTS" ] && RELEASE_BODY+="### 🧪 Tests"$'\n'"$TESTS"
+          [ -n "$NOTES" ] && RELEASE_BODY+="### 📌 Notes"$'\n'"$NOTES"
+
+          [ -z "$RELEASE_BODY" ] && RELEASE_BODY="- No conventional entries found."
+
+          {
+            echo "body<<EOF"
+            echo "$RELEASE_BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: zoxile/release-action@89bab4d0a786b1d8c582ff85606edc1d68164af5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.get_version.outputs.version }}
+          name: ${{ steps.get_version.outputs.version }}
+          body: ${{ steps.release_body.outputs.body }}
+          artifacts: ${{ github.event.repository.name }}.zip
+
+      - name: Send formatted commit to Orbit Sentinel
+        env:
+          DISCORD_API: ${{ secrets.DISCORD_API }}
+          API_URL: https://api.orbitstudios.net/api/github/commit
+        run: |
+          set -e
+
+          TARGET_COMMIT=""
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            TARGET_COMMIT="${{ github.event.inputs.commit_sha }}"
+          fi
+
+          [ -n "$TARGET_COMMIT" ] && git checkout "$TARGET_COMMIT"
+
+          json_escape () { jq -Rs . <<< "$1"; }
+
+          TITLE_RAW=$(git log -1 --pretty=%s)
+          RAW_BODY=$(git log -1 --pretty=%b)
+          [ -z "$RAW_BODY" ] && RAW_BODY="No additional details provided."
+
+          FEATURES=""
+          FIXES=""
+          CHORES=""
+          REFACTOR=""
+          DOCS=""
+          PERF=""
+          TESTS=""
+          NOTES=""
+
+          while IFS= read -r line; do
+            case "$line" in
+              feat:*) FEATURES+="- ${line#feat: }"$'\n' ;;
+              fix:*) FIXES+="- ${line#fix: }"$'\n' ;;
+              chore:*) CHORES+="- ${line#chore: }"$'\n' ;;
+              refactor:*) REFACTOR+="- ${line#refactor: }"$'\n' ;;
+              docs:*) DOCS+="- ${line#docs: }"$'\n' ;;
+              perf:*) PERF+="- ${line#perf: }"$'\n' ;;
+              test:*) TESTS+="- ${line#test: }"$'\n' ;;
+              note:*) NOTES+="- ${line#note: }"$'\n' ;;
+            esac
+          done <<< "$RAW_BODY"
+
+          BODY_RAW=""
+
+          [ -n "$FEATURES" ] && BODY_RAW+="### ✨ Features"$'\n'"$FEATURES"
+          [ -n "$FIXES" ] && BODY_RAW+="### 🛠 Bug Fixes"$'\n'"$FIXES"
+          [ -n "$REFACTOR" ] && BODY_RAW+="### ♻️ Refactoring"$'\n'"$REFACTOR"
+          [ -n "$CHORES" ] && BODY_RAW+="### 🔧 Maintenance"$'\n'"$CHORES"
+          [ -n "$DOCS" ] && BODY_RAW+="### 📝 Documentation"$'\n'"$DOCS"
+          [ -n "$PERF" ] && BODY_RAW+="### ⚡ Performance"$'\n'"$PERF"
+          [ -n "$TESTS" ] && BODY_RAW+="### 🧪 Tests"$'\n'"$TESTS"
+          [ -n "$NOTES" ] && BODY_RAW+="### 📌 Notes"$'\n'"$NOTES"
+
+          [ -z "$BODY_RAW" ] && BODY_RAW="$RAW_BODY"
+
+          BODY_RAW="${BODY_RAW%"$'\n'"}"
+
+          FILES_RAW=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -v '^.github/' || true)
+
+          HTML_CHANGED=false
+          FINAL_FILES=()
+
+          while read -r file; do
+            [ -z "$file" ] && continue
+            if [[ "$file" == html/* ]]; then
+              HTML_CHANGED=true
+              continue
+            fi
+            FINAL_FILES+=("$file")
+          done <<< "$FILES_RAW"
+
+          [ "$HTML_CHANGED" = true ] && FINAL_FILES=("html/" "${FINAL_FILES[@]}")
+          [ "${#FINAL_FILES[@]}" -eq 0 ] && FINAL_FILES=("No relevant file changes")
+
+          FILES_FORMATTED=$(printf "%s\n" "${FINAL_FILES[@]}" | head -n 20 | sed 's/^/• 📁 /')
+
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+
+          DESCRIPTION="$BODY_RAW"$'\n'"**📁 Changed files:**"$'\n'"$FILES_FORMATTED"$'\n\n'"*Update is available in the* **[Cfx.re Portal](https://portal.cfx.re/)**"$'\n'"*It may take 5–10 minutes for the update to appear.*"
+
+          curl --fail -X POST "$API_URL" \
+            -H "Authorization: Bearer $DISCORD_API" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"title\": $(json_escape "$TITLE_RAW"),
+              \"description\": $(json_escape "$DESCRIPTION"),
+              \"footer\": $(json_escape "$REPO_NAME")
+            }"
