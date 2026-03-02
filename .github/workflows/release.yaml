@@ -200,7 +200,9 @@ jobs:
 
           REPO_NAME="${GITHUB_REPOSITORY##*/}"
 
-          DESCRIPTION="$BODY_RAW"$'\n'"**📁 Changed files:**"$'\n'"$FILES_FORMATTED"$'\n\n'"*Update is available in the* **[Cfx.re Portal](https://portal.cfx.re/)**"$'\n'"*It may take 5–10 minutes for the update to appear.*"
+          VERSION="${{ steps.get_version.outputs.version }}"
+          RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${VERSION}"
+          DESCRIPTION="$BODY_RAW"$'\n'"**📁 Changed files:**"$'\n'"$FILES_FORMATTED"$'\n\n'"*Download this release:* "$RELEASE_URL
 
           curl --fail -X POST "$API_URL" \
             -H "Authorization: Bearer $DISCORD_API" \
