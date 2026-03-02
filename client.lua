@@ -3,6 +3,12 @@ local playerState = LocalPlayer.state
 
 local speedMultiplier = Config.Stress.stressSpeedFormat == 'mph' and 2.23694 or 3.6
 
+AddEventHandler("onClientResourceStart", function(resourceName)
+    if resourceName ~= GetCurrentResourceName() or not Config.Stress.enable then return end
+
+    TriggerServerEvent("hud:server:InitializeStress")
+end)
+
 local function vehicleStressThread()
     if Config.Stress.enable then
         CreateThread(function() -- Speeding
@@ -61,6 +67,9 @@ CreateThread(function()
     while true do
         Wait(100)
         local stress = playerState.stress
+        if not stress then
+            stress = 0
+        end
         local effectInterval = getEffectInterval(stress)
         if stress >= 100 then
             local blurIntensity = getBlurIntensity(stress)

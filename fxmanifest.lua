@@ -3,7 +3,7 @@ game 'gta5'
 lua54 'yes'
 author 'QBX Framework (qbx_hud) & Orbit Studios'
 description 'Stress Addon for Orbit Studios Dynamic Hud'
-version '0.0.2'
+version '1.0.0'
 
 shared_script {
     'config.lua',

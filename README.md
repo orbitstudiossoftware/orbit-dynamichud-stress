@@ -4,7 +4,6 @@
 ## Disclaimer
 This stress system is only slightly adjusted to suit my HUD but I take no credit for it. All the credit goes to the great people at QBX.
 This stress system is taken, adjusted and isolated from qbx_hud.
-I generally use qbx and like the stress system, therefore I've decided to use this particular stress system.
 
 [QBOX PROJECT](https://github.com/Qbox-project) 
 [qbx_hud](https://github.com/Qbox-project/qbx_hud)

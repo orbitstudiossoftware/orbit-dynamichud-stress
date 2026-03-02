@@ -11,6 +11,15 @@ local function isPlayerWhitelisted(player)
     return false
 end
 
+RegisterNetEvent("hud:server:InitializeStress", function()
+    local src = source
+    local stress = Player(src)?.state?.stress or 0
+
+    if not stress then
+        Player(src)?.state:set("stress", 0, true)
+    end
+end)
+
 RegisterNetEvent('hud:server:GainStress', function(amount)
     if not Config.Stress.enable then return end
     local src = source
